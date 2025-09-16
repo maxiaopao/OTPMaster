@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- 完全磁盘访问权限 -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+    
+    <!-- 辅助功能权限 -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+    
+    <!-- 网络访问权限（如果需要） -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+    
+    <!-- 硬化运行时 -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    
+    <!-- 允许访问系统事件 -->
+    <key>com.apple.security.temporary-exception.apple-events</key>
+    <array>
+        <string>com.apple.systemevents</string>
+        <string>com.apple.systempreferences</string>
+    </array>
+    
+    <!-- 允许访问消息应用 -->
+    <key>com.apple.security.temporary-exception.files.absolute-path.read-only</key>
+    <array>
+        <string>~/Library/Messages/</string>
+    </array>
+</dict>
+</plist>
