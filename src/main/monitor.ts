@@ -2,102 +2,40 @@ import { EventEmitter } from 'events'
 import { homedir } from 'os'
 import { join } from 'path'
 import { existsSync } from 'fs'
-import { exec } from 'child_process'
-import { promisify } from 'util'
 import * as sqlite3 from 'sqlite3'
-import { ConfigManager } from './config'
-import { PermissionManager } from './permissions'
 import { AutomationService } from './automation'
 import type { SMSMessage, VerificationCode } from '@shared/types'
-import { DATABASE } from '@shared/constants'
 import { extractVerificationCode } from '@shared/utils'
-
-const execAsync = promisify(exec)
 
 export class SMSMonitor extends EventEmitter {
   private isMonitoring = false
-  private lastCheckTime = new Date(0) // 初始设置为1970年，确保首次检查会查看过去1小时
+  private lastCheckTime = new Date(0)
   private checkInterval: NodeJS.Timeout | null = null
   private database: sqlite3.Database | null = null
-  private mockMessages: SMSMessage[] = []
   private useRealDatabase = false
-  private processedMessages = new Set<string>() // 记录已处理的消息ID，避免重复复制
+  private processedMessages = new Set<string>()
 
-  constructor(
-    private configManager: ConfigManager,
-    private permissionManager: PermissionManager,
-    private automationService: AutomationService
-  ) {
+  constructor(private automationService: AutomationService) {
     super()
-    this.initializeMockData()
-  }
-
-  // 初始化模拟数据
-  private initializeMockData(): void {
-    const now = new Date();
-    this.mockMessages = [
-      {
-        id: '1',
-        text: '您好，您的验证码是123456，请在5分钟内使用。',
-        sender: '+8613800138000',
-        timestamp: new Date(now.getTime() - 30000), // 30秒前
-        guid: 'mock-guid-1'
-      },
-      {
-        id: '2', 
-        text: '欢迎使用我们的服务！',
-        sender: '+8613800138001',
-        timestamp: new Date(now.getTime() - 120000), // 2分钟前
-        guid: 'mock-guid-2'
-      },
-      {
-        id: '3',
-        text: '您的手机验证码为：789012，请妥善保管。',
-        sender: '+8613800138002',
-        timestamp: new Date(now.getTime() - 180000), // 3分钟前
-        guid: 'mock-guid-3'
-      },
-      {
-        id: '4',
-        text: 'Your verification code is: ABC123. Valid for 10 minutes.',
-        sender: '+1234567890',
-        timestamp: new Date(now.getTime() - 240000), // 4分钟前
-        guid: 'mock-guid-4'
-      },
-      {
-        id: '5',
-        text: '普通短信内容，不包含验证码。',
-        sender: '+8613800138003',
-        timestamp: new Date(now.getTime() - 300000), // 5分钟前
-        guid: 'mock-guid-5'
-      },
-      {
-        id: '6',
-        text: '【测试】您的验证码是：999888，有效期10分钟。',
-        sender: '+8613800138004',
-        timestamp: new Date(now.getTime() - 10000), // 10秒前 - 非常新的消息
-        guid: 'mock-guid-6'
-      }
-    ]
-    
-    console.log('模拟数据已初始化，包含', this.mockMessages.length, '条消息');
   }
 
   public async startMonitoring(): Promise<void> {
     if (this.isMonitoring) {
-      console.log('短信监控已在运行')
+      console.log('⚠️ 短信监控已在运行')
       return
     }
 
     try {
-      // 尝试初始化真实数据库连接，如果失败则使用模拟数据
+      // 设置初始时间为当前时间，只监控从现在开始的新短信
+      this.lastCheckTime = new Date()
+      
       await this.initializeMonitoring()
       this.isMonitoring = true
-      
-      console.log('短信监控已启动')
+      console.log('✅ 短信监控已启动')
+      console.log('⚙️ 只监控新短信，不处理历史消息')
+      console.log('📈 监控间隔：5秒')
     } catch (error) {
-      console.error('启动短信监控失败:', error)
-      throw error
+      console.error('❌ 启动监控失败:', error)
     }
   }
 
@@ -108,28 +46,28 @@ export class SMSMonitor extends EventEmitter {
 
     this.cleanup()
     this.isMonitoring = false
-    console.log('短信监控已停止')
   }
 
   private async initializeMonitoring(): Promise<void> {
     const dbPath = join(homedir(), 'Library/Messages/chat.db')
     
+    console.log('📁 正在检查数据库:', dbPath)
+    
     if (existsSync(dbPath)) {
       try {
-        console.log('尝试连接Messages数据库...');
         await this.initializeDatabase(dbPath)
         this.useRealDatabase = true
-        console.log('✅ 成功连接Messages数据库，将使用真实短信数据');
+        console.log('✅ 成功连接Messages数据库')
       } catch (error) {
-        console.warn('⚠️  连接数据库失败，使用模拟数据:', error);
         this.useRealDatabase = false
+        console.log('⚠️ 数据库连接失败，可能缺少权限')
       }
     } else {
-      console.log('❌ 未找到Messages数据库，使用模拟数据');
       this.useRealDatabase = false
+      console.log('❌ 未找到Messages数据库')
     }
 
-    // 设置定期检查
+    // 设置定期检查 - 每5秒检查一次
     this.setupPeriodicCheck()
   }
 
@@ -137,18 +75,15 @@ export class SMSMonitor extends EventEmitter {
     return new Promise((resolve, reject) => {
       this.database = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
         if (err) {
-          reject(new Error(`无法连接到 Messages 数据库: ${err}`))
+          reject(err)
           return
         }
         
-        // 测试数据库连接
-        this.database!.get('SELECT COUNT(*) as count FROM message LIMIT 1', (err, row: any) => {
+        this.database!.get('SELECT COUNT(*) as count FROM message LIMIT 1', (err) => {
           if (err) {
-            reject(new Error(`数据库查询测试失败: ${err}`))
+            reject(err)
             return
           }
-          
-          console.log('数据库连接测试成功，消息表可访问');
           resolve()
         })
       })
@@ -156,369 +91,91 @@ export class SMSMonitor extends EventEmitter {
   }
 
   private setupPeriodicCheck(): void {
-    const config = this.configManager.getConfig()
-    
     this.checkInterval = setInterval(() => {
       this.checkForNewMessages()
-    }, config.monitoring.check_interval)
-
-    console.log('定期检查已设置')
+    }, 5000) // 每5秒检查一次
   }
 
   private async checkForNewMessages(): Promise<void> {
-    try {
-      const config = this.configManager.getConfig()
-      // 首次启动时，检查过去1小时的消息，之后使用lastCheckTime
-      let lookbackTime: Date;
-      const now = new Date();
-      
-      // 检查是否是首次检查或距离上次检查超过1小时
-      const timeSinceLastCheck = now.getTime() - this.lastCheckTime.getTime();
-      console.log(`距离上次检查的时间: ${timeSinceLastCheck}ms, lastCheckTime: ${this.lastCheckTime.toISOString()}`);
-      
-      if (timeSinceLastCheck > 60 * 60 * 1000) {
-        // 如果距离上次检查超过1小时（比如应用刚启动），检查过去1小时
-        lookbackTime = new Date(now.getTime() - 60 * 60 * 1000); // 1小时前
-        console.log('🚀 应用启动或长时间未检查，查看过去1小时的消息');
-      } else {
-        // 正常情况下，使用lastCheckTime作为查询起点，额外往前30秒确保不遗漏
-        lookbackTime = new Date(this.lastCheckTime.getTime() - 30000); // 额外往前30秒
-        console.log('🔄 正常检查，使用lastCheckTime');
-      }
+    if (!this.useRealDatabase || !this.database) {
+      return
+    }
 
-      console.log(`正在检查新消息... (自 ${lookbackTime.toLocaleTimeString()} 起)`);
+    try {
+      const now = new Date()
+      const lookbackTime = new Date(this.lastCheckTime.getTime() - 30000) // 往前30秒
       const messages = await this.queryRecentMessagesAsync(lookbackTime)
-      console.log(`检查到 ${messages.length} 条最近消息`);
       
-      // 只处理在lastCheckTime之后的消息（除非是首次检查）
-      let newMessages: SMSMessage[];
-      if (timeSinceLastCheck > 60 * 60 * 1000) {
-        // 首次检查或长时间未检查，处理所有找到的消息
-        newMessages = messages;
-        console.log(`首次检查，处理所有 ${messages.length} 条消息`);
-      } else {
-        // 正常检查，只处理新消息
-        newMessages = messages.filter(message => message.timestamp > this.lastCheckTime);
-        console.log(`其中 ${newMessages.length} 条是新消息`);
-      }
+      // 只处理真正的新消息（时间戳大于lastCheckTime）
+      const newMessages = messages.filter(message => message.timestamp > this.lastCheckTime)
       
       for (const message of newMessages) {
-        console.log(`检查消息: ${message.text.substring(0, 50)}... (${message.timestamp.toLocaleTimeString()})`);
         const verificationCode = extractVerificationCode(message.text, message.sender)
         
         if (verificationCode) {
-          // 创建消息的唯一标识
           const messageKey = `${message.id}_${message.timestamp.getTime()}`
           
-          // 检查是否已经处理过这条消息
-          if (this.processedMessages.has(messageKey)) {
-            console.log('⏭️ 消息已处理，跳过:', messageKey)
-            continue
-          }
-          
-          console.log('🎉 发现新验证码:', verificationCode)
-          
-          // 触发验证码提取事件，同时传递原始短信信息
-          this.emit('verification-code-extracted', verificationCode, message)
-          
-          // 标记消息为已处理
-          this.processedMessages.add(messageKey)
-          console.log('✅ 已标记消息为已处理:', messageKey)
-          
-          // 执行自动化操作（复制到剪贴板）
-          console.log('📋 执行自动化操作（复制到剪贴板）')
-          try {
-            await this.automationService.executeAutoSequence(verificationCode.code)
-          } catch (error) {
-            console.error('自动化操作失败:', error)
-          }
-        }
-      }
-      
-      // 另外，如果有任何消息（不管是否包含验证码），都发送最新的一条到前端
-      if (messages.length > 0) {
-        const latestMessage = messages[0]; // 数据库查询是按时间降序排列的
-        console.log('📩 发送最新短信到前端:', latestMessage.text.substring(0, 30) + '...');
-        this.emit('latest-message-updated', latestMessage);
-        
-        // 检查最新短信是否包含验证码
-        const latestVerificationCode = extractVerificationCode(latestMessage.text, latestMessage.sender)
-        if (latestVerificationCode) {
-          // 创建消息的唯一标识
-          const messageKey = `${latestMessage.id}_${latestMessage.timestamp.getTime()}`
-          
-          // 只有未处理过的消息才复制
           if (!this.processedMessages.has(messageKey)) {
-            console.log('📩 最新短信包含验证码，复制到剪贴板:', latestVerificationCode.code)
             this.processedMessages.add(messageKey)
+            
             try {
-              await this.automationService.executeAutoSequence(latestVerificationCode.code)
+              await this.automationService.executeAutoSequence(verificationCode.code)
+              console.log('✅ 验证码已复制:', verificationCode.code)
             } catch (error) {
-              console.error('更新剪贴板失败:', error)
+              console.error('复制失败:', error)
             }
-          } else {
-            console.log('📩 最新短信包含验证码，但已处理过，跳过复制:', latestVerificationCode.code)
           }
-        } else {
-          console.log('📩 最新短信不包含验证码，不更新剪贴板')
         }
       }
 
-      // 更新最后检查时间
-      this.lastCheckTime = new Date()
+      // 更新lastCheckTime以确保下次只处理新消息
+      this.lastCheckTime = now
     } catch (error) {
-      console.error('检查新消息失败:', error)
+      // 静默处理错误
     }
   }
 
-  // 查询最近的消息
-private queryRecentMessages(since: Date): SMSMessage[] {
-    if (this.useRealDatabase && this.database) {
-      try {
-        // 由于sqlite3是异步的，这里暂时返回空数组，需要重构为异步方法
-        console.log('注意：数据库查询需要重构为异步方法');
-        return []
-      } catch (error) {
-        console.error('查询数据库失败，使用模拟数据:', error)
-        return this.mockMessages.filter(message => message.timestamp > since)
-      }
-    } else {
-      // 返回指定时间之后的模拟消息
-      return this.mockMessages.filter(message => message.timestamp > since)
-    }
-  }
-
-  // 异步查询最近的消息
   private async queryRecentMessagesAsync(since: Date): Promise<SMSMessage[]> {
-    if (this.useRealDatabase && this.database) {
-      try {
-        console.log(`正在从真实数据库查询最近消息... (自 ${since.toLocaleTimeString()} 起)`);
-        
-        // 首先查询所有最近的消息，不限时间，看看数据库里有什么
-        const debugQuery = `
-          SELECT 
-            m.ROWID as id,
-            m.text,
-            h.id as sender,
-            datetime(m.date/1000000000 + strftime('%s', '2001-01-01'), 'unixepoch', 'localtime') as timestamp,
-            m.guid,
-            m.date/1000000000 + strftime('%s', '2001-01-01') as unix_timestamp,
-            m.date as original_date
-          FROM message m
-          JOIN handle h ON m.handle_id = h.ROWID
-          WHERE m.text IS NOT NULL 
-            AND m.text != ''
-          ORDER BY m.date DESC
-          LIMIT 10
-        `;
-        
-        console.log('🔍 先查询最新的10条消息，看看数据库状态:');
-        const debugPromise = new Promise<any[]>((resolve, reject) => {
-          this.database!.all(debugQuery, [], (err, rows: any[]) => {
-            if (err) {
-              console.error('调试查询失败:', err);
-              reject(err);
-              return;
-            }
-            resolve(rows);
-          });
-        });
-        
-        const debugRows = await debugPromise;
-        console.log(`📊 数据库中最新的 ${debugRows.length} 条消息:`);
-        debugRows.forEach((row, index) => {
-          const msgTimestamp = new Date(row.unix_timestamp * 1000);
-          console.log(`${index + 1}. [${msgTimestamp.toLocaleString()}] ${row.sender}: ${row.text.substring(0, 50)}...`);
-        });
-        
-        // 现在执行正常的时间过滤查询
-        const query = `
-          SELECT 
-            m.ROWID as id,
-            m.text,
-            h.id as sender,
-            datetime(m.date/1000000000 + strftime('%s', '2001-01-01'), 'unixepoch', 'localtime') as timestamp,
-            m.guid,
-            m.date/1000000000 + strftime('%s', '2001-01-01') as unix_timestamp
-          FROM message m
-          JOIN handle h ON m.handle_id = h.ROWID
-          WHERE m.text IS NOT NULL 
-            AND m.text != ''
-            AND m.date/1000000000 + strftime('%s', '2001-01-01') >= ?
-          ORDER BY m.date DESC
-          LIMIT 100
-        `;
-
-        const sinceUnixTimestamp = Math.floor(since.getTime() / 1000);
-        console.log(`查询参数: unix_timestamp >= ${sinceUnixTimestamp} (${since.toISOString()})`);
-        
-        // 让我们也显示当前时间用于对比
-        const now = new Date();
-        const nowUnixTimestamp = Math.floor(now.getTime() / 1000);
-        console.log(`当前时间: unix_timestamp = ${nowUnixTimestamp} (${now.toISOString()})`);
-
-        return new Promise((resolve, reject) => {
-          this.database!.all(query, [sinceUnixTimestamp], (err, rows: any[]) => {
-            if (err) {
-              console.error('数据库查询失败:', err);
-              reject(err);
-              return;
-            }
-
-            const messages = rows.map((row) => ({
-              id: String(row.id),
-              text: row.text || '',
-              sender: row.sender || 'Unknown',
-              timestamp: new Date(row.unix_timestamp * 1000), // 使用unix_timestamp转换
-              guid: row.guid || ''
-            }));
-
-            console.log(`从数据库查询到 ${messages.length} 条最近消息`);
-            if (messages.length > 0) {
-              console.log('最新消息时间:', messages[0].timestamp.toLocaleTimeString());
-              console.log('最旧消息时间:', messages[messages.length - 1].timestamp.toLocaleTimeString());
-            }
-            resolve(messages);
-          });
-        });
-      } catch (error) {
-        console.error('查询数据库失败，使用模拟数据:', error)
-        return this.mockMessages.filter(message => message.timestamp > since)
-      }
-    } else {
-      // 使用模拟数据
-      console.log(`使用模拟数据查询最近消息... (自 ${since.toLocaleTimeString()} 起)`);
-      const filteredMessages = this.mockMessages.filter(message => message.timestamp > since);
-      console.log(`从模拟数据查询到 ${filteredMessages.length} 条最近消息`);
-      return filteredMessages;
+    if (!this.database) {
+      return []
     }
-  }
 
-  // 获取所有消息（用于测试复制功能）
-  public getAllMessages(): SMSMessage[] {
-    if (this.useRealDatabase && this.database) {
-      // 使用Promise来包装异步查询，但这里为了保持同步接口，暂时返回模拟数据
-      // 在实际使用中，应该将此方法改为异步方法
-      this.queryRealMessages().then(messages => {
-        console.log(`从数据库获取到 ${messages.length} 条消息`);
-        // 这里可以触发事件通知有新数据
-      }).catch(error => {
-        console.error('查询真实数据库失败:', error);
-      });
-      
-      // 暂时返回模拟数据作为后备
-      return [...this.mockMessages].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
-    } else {
-      return [...this.mockMessages].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
-    }
-  }
+    const query = `
+      SELECT 
+        m.ROWID as id,
+        m.text,
+        h.id as sender,
+        m.guid,
+        m.date/1000000000 + strftime('%s', '2001-01-01') as unix_timestamp
+      FROM message m
+      JOIN handle h ON m.handle_id = h.ROWID
+      WHERE m.text IS NOT NULL 
+        AND m.text != ''
+        AND m.date/1000000000 + strftime('%s', '2001-01-01') >= ?
+      ORDER BY m.date DESC
+      LIMIT 50
+    `
 
-  // 异步查询真实数据库消息
-  private queryRealMessages(): Promise<SMSMessage[]> {
-    return new Promise((resolve, reject) => {
-      if (!this.database) {
-        reject(new Error('数据库未连接'));
-        return;
-      }
+    const sinceUnixTimestamp = Math.floor(since.getTime() / 1000)
 
-      const query = `
-        SELECT 
-          m.ROWID as id,
-          m.text,
-          h.id as sender,
-          datetime(m.date/1000000000 + strftime('%s', '2001-01-01'), 'unixepoch', 'localtime') as timestamp,
-          m.guid
-        FROM message m
-        JOIN handle h ON m.handle_id = h.ROWID
-        WHERE m.text IS NOT NULL 
-          AND m.text != ''
-        ORDER BY m.date DESC
-        LIMIT 100
-      `;
-
-      this.database.all(query, (err, rows: any[]) => {
+    return new Promise((resolve) => {
+      this.database!.all(query, [sinceUnixTimestamp], (err, rows: any[]) => {
         if (err) {
-          reject(err);
-          return;
+          resolve([])
+          return
         }
 
         const messages = rows.map((row) => ({
           id: String(row.id),
           text: row.text || '',
-          sender: row.sender || 'Unknown',
-          timestamp: new Date(row.timestamp),
+          sender: row.sender || '',
+          timestamp: new Date(row.unix_timestamp * 1000),
           guid: row.guid || ''
-        }));
+        }))
 
-        resolve(messages);
-      });
-    });
-  }
-
-  // 查找第一条包含验证码的消息
-  public findFirstVerificationCodeMessage(): { message: SMSMessage; code: VerificationCode } | null {
-    if (this.useRealDatabase && this.database) {
-      // 对于真实数据库，我们需要异步查询，这里先返回null，实际使用时需要重构为异步
-      console.log('注意：真实数据库查询需要异步实现');
-      return this.findFirstVerificationCodeFromMockData();
-    } else {
-      return this.findFirstVerificationCodeFromMockData();
-    }
-  }
-
-  // 从模拟数据中查找验证码
-  private findFirstVerificationCodeFromMockData(): { message: SMSMessage; code: VerificationCode } | null {
-    const sortedMessages = [...this.mockMessages].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-    
-    for (const message of sortedMessages) {
-      const verificationCode = extractVerificationCode(message.text, message.sender)
-      if (verificationCode) {
-        return { message, code: verificationCode }
-      }
-    }
-    
-    return null
-  }
-
-  // 从指定索引开始查找下一条包含验证码的消息
-  public findNextVerificationCodeMessage(startIndex: number): { message: SMSMessage; code: VerificationCode; index: number } | null {
-    const sortedMessages = this.getAllMessages()
-    
-    for (let i = startIndex; i < sortedMessages.length; i++) {
-      const message = sortedMessages[i]
-      const verificationCode = extractVerificationCode(message.text, message.sender)
-      if (verificationCode) {
-        return { message, code: verificationCode, index: i }
-      }
-    }
-    
-    return null
-  }
-
-  // 异步查找包含验证码的消息（用于真实数据库）
-  public async findVerificationCodeFromRealDB(): Promise<{ message: SMSMessage; code: VerificationCode } | null> {
-    if (!this.useRealDatabase || !this.database) {
-      return this.findFirstVerificationCodeFromMockData();
-    }
-
-    try {
-      const messages = await this.queryRealMessages();
-      
-      for (const message of messages) {
-        const verificationCode = extractVerificationCode(message.text, message.sender);
-        if (verificationCode) {
-          console.log(`✅ 从真实数据库找到验证码: ${verificationCode.code}`);
-          return { message, code: verificationCode };
-        }
-      }
-      
-      console.log('❌ 真实数据库中未找到验证码');
-      return null;
-      
-    } catch (error) {
-      console.error('查询真实数据库失败，使用模拟数据:', error);
-      return this.findFirstVerificationCodeFromMockData();
-    }
+        resolve(messages)
+      })
+    })
   }
 
   private cleanup(): void {
@@ -528,77 +185,8 @@ private queryRecentMessages(since: Date): SMSMessage[] {
     }
     
     if (this.database) {
-      this.database.close((err) => {
-        if (err) {
-          console.error('关闭数据库连接失败:', err)
-        } else {
-          console.log('数据库连接已关闭')
-        }
-      })
+      this.database.close()
       this.database = null
-    }
-  }
-
-  public isRunning(): boolean {
-    return this.isMonitoring
-  }
-  
-  // 公开方法：获取最新短信
-  public async getLatestMessages(limit: number = 10): Promise<SMSMessage[]> {
-    return await this.queryRecentMessagesAsync(new Date(0)) // 从1970年开始查询
-  }
-
-  // 测试方法：重置监控状态，让历史短信重新被处理
-  public async resetMonitorState(): Promise<void> {
-    this.lastCheckTime = new Date(0);
-    this.processedMessages.clear();
-    console.log('⚙️ 监控状态已重置，将重新处理所有消息');
-  }
-
-  // 测试方法：手动查找并复制验证码
-  public async testCopyVerificationCode(): Promise<void> {
-    console.log('🗺️ 正在查找并测试复制验证码...');
-    
-    const result = await this.findVerificationCodeFromRealDB();
-    if (result) {
-      console.log('✅ 找到验证码:', result.code.code);
-      
-      // 测试复制到剪贴板
-      try {
-        await this.automationService.executeAutoSequence(result.code.code);
-        console.log('✅ 测试复制成功！');
-      } catch (error) {
-        console.error('❌ 测试复制失败:', error);
-      }
-    } else {
-      console.log('❌ 未找到包含验证码的短信');
-    }
-  }
-  
-  // 测试方法：模拟新短信并触发复制（仅用于测试）
-  public async testVerificationCodeCopy(): Promise<void> {
-    const testMessage: SMSMessage = {
-      id: 'test_' + Date.now(),
-      text: '【测试】您的验证码是：123456，请在短时间内使用。',
-      sender: '+8613800138000',
-      timestamp: new Date(),
-      guid: 'test-guid-' + Date.now()
-    };
-    
-    console.log('🧪 正在测试验证码复制功能...');
-    
-    const verificationCode = extractVerificationCode(testMessage.text, testMessage.sender);
-    if (verificationCode) {
-      console.log('🎉 测试消息中发现验证码:', verificationCode);
-      
-      try {
-        await this.automationService.executeAutoSequence(verificationCode.code);
-        console.log('✅ 测试成功！验证码已复制到剪贴板:', verificationCode.code);
-      } catch (error) {
-        console.error('❌ 测试失败:', error);
-      }
-    } else {
-      console.log('❌ 测试消息中未找到验证码');
     }
   }
 }
