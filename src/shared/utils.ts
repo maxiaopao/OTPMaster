@@ -1,4 +1,4 @@
-import { VerificationCode } from './types'
+import type { VerificationCode } from './types'
 import { VERIFICATION_CODE } from './constants'
 
 /**

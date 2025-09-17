@@ -1,4 +1,4 @@
-import { LocaleConfig } from './types'
+import type { LocaleConfig } from './types'
 
 // 应用常量
 export const APP_CONFIG = {
@@ -11,15 +11,13 @@ export const APP_CONFIG = {
 export const DEFAULT_CONFIG = {
   version: '1.0.0',
   settings: {
-    auto_paste: false,
-    auto_return: false,
     hide_icon_forever: false,
     launch_at_login: false,
     language: 'auto' as const,
   },
   monitoring: {
-    check_interval: 1000,
-    message_lookback_minutes: 1,
+    check_interval: 500,  // 0.5秒检查一次，提高实时性
+    message_lookback_minutes: 2,  // 查看过去2分钟的消息
   },
 } as const
 
@@ -138,6 +136,10 @@ export const IPC_CHANNELS = {
   VERIFICATION_CODE_EXTRACTED: 'verification-code-extracted',
   SIMULATE_PASTE: 'simulate-paste',
   SIMULATE_ENTER: 'simulate-enter',
+  COPY_TO_CLIPBOARD: 'copy-to-clipboard',
+  GET_LATEST_VERIFICATION_CODE: 'get-latest-verification-code',
+  ADD_TEST_VERIFICATION_CODE: 'add-test-verification-code',
+  TEST_COPY_FROM_SMS: 'test-copy-from-sms',
   
   // 应用状态
   APP_STATE_CHANGED: 'app-state-changed',
@@ -151,8 +153,6 @@ export const IPC_CHANNELS = {
 
 // 托盘菜单项 ID
 export const TRAY_MENU_IDS = {
-  AUTO_PASTE: 'auto_paste',
-  AUTO_RETURN: 'auto_return',
   HIDE_ICON_TEMP: 'hide_icon_temp',
   HIDE_ICON_FOREVER: 'hide_icon_forever',
   LAUNCH_AT_LOGIN: 'launch_at_login',

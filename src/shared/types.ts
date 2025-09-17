@@ -7,8 +7,6 @@ export interface AppConfig {
 
 // 应用设置接口
 export interface AppSettings {
-  auto_paste: boolean
-  auto_return: boolean
   hide_icon_forever: boolean
   launch_at_login: boolean
   language: 'auto' | 'zh-CN' | 'en'
@@ -22,8 +20,6 @@ export interface MonitoringConfig {
 
 // 托盘菜单状态接口
 export interface TrayMenuState {
-  autoPaste: boolean
-  autoReturn: boolean
   launchAtLogin: boolean
   hideIconForever: boolean
 }

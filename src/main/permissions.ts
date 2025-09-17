@@ -3,14 +3,14 @@ import { shell } from 'electron'
 import { existsSync, accessSync, constants } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
-import { PermissionStatus, PermissionCheckResult } from '@shared/types'
+import type { PermissionStatus, PermissionCheckResult } from '@shared/types'
 import { PERMISSIONS, PATHS } from '@shared/constants'
 import { isMacOS } from '@shared/utils'
 
 export class PermissionManager extends EventEmitter {
   private currentStatus: PermissionStatus = {
     fullDiskAccess: false,
-    accessibility: false,
+    accessibility: true, // 不再需要辅助功能权限，默认为true
   }
 
   private checkInterval: NodeJS.Timeout | null = null
@@ -22,11 +22,10 @@ export class PermissionManager extends EventEmitter {
 
   public async checkAllPermissions(): Promise<PermissionStatus> {
     const fullDiskAccess = await this.checkFullDiskAccess()
-    const accessibility = await this.checkAccessibilityPermission()
 
     const newStatus: PermissionStatus = {
       fullDiskAccess: fullDiskAccess.hasPermission,
-      accessibility: accessibility.hasPermission,
+      accessibility: true, // 不再需要辅助功能权限
     }
 
     if (this.hasStatusChanged(newStatus)) {
@@ -58,27 +57,6 @@ export class PermissionManager extends EventEmitter {
       return { 
         hasPermission: false, 
         errorMessage: `无法访问 Messages 数据库: ${error}` 
-      }
-    }
-  }
-
-  private async checkAccessibilityPermission(): Promise<PermissionCheckResult> {
-    if (!isMacOS()) {
-      return { hasPermission: true }
-    }
-
-    try {
-      // 在 macOS 上检查辅助功能权限
-      // 注意：在实际使用中，需要使用如 robotjs 或 @nut-tree/nut-js 等自动化库来检查
-      // 这里仅作为演示，实际部署时需要正确的权限检查实现
-      console.log('模拟辅助功能权限检查')
-      
-      // 临时返回 true，实际使用时需要正确的权限检查
-      return { hasPermission: true }
-    } catch (error) {
-      return { 
-        hasPermission: false, 
-        errorMessage: `辅助功能权限检查失败: ${error}` 
       }
     }
   }

@@ -15,128 +15,42 @@
             授予权限
           </button>
         </div>
-        
-        <div v-if="!appStore.permissions.accessibility" class="permission-item">
-          <div class="permission-info">
-            <h3>辅助功能权限</h3>
-            <p>需要此权限来执行自动粘贴和回车操作</p>
-          </div>
-          <button class="btn btn-primary" @click="showAccessibilityGuide">
-            授予权限
-          </button>
-        </div>
       </div>
     </div>
 
-    <!-- 功能设置区域 -->
+    <!-- 实时监控状态区域 -->
     <div class="card">
       <div class="card-header">
-        <h2 class="card-title">⚙️ 功能设置</h2>
+        <h2 class="card-title">📡 实时监控</h2>
       </div>
       <div class="card-content">
-        <div class="list">
-          <div class="list-item">
-            <div class="list-item-content">
-              <div class="list-item-title">自动粘贴</div>
-              <div class="list-item-description">提取到验证码后自动粘贴到活动窗口</div>
-            </div>
-            <label class="switch">
-              <input 
-                type="checkbox" 
-                :checked="appStore.config.settings.auto_paste"
-                @change="toggleAutoPaste"
-              >
-              <span class="switch-slider"></span>
-            </label>
+        <div class="monitor-status">
+          <div class="status-indicator">
+            <div class="status-dot active"></div>
+            <span class="status-text">正在监控最新短信...</span>
+          </div>
+          <div class="monitor-description">
+            <p>应用正在实时监控您的短信，当收到包含验证码的新短信时，将自动解析验证码并复制到剪贴板。</p>
           </div>
           
-          <div class="list-item">
-            <div class="list-item-content">
-              <div class="list-item-title">自动回车</div>
-              <div class="list-item-description">粘贴后自动按回车键（需要先启用自动粘贴）</div>
+          <!-- 最新短信显示区域 -->
+          <div v-if="latestMessage" class="latest-message">
+            <div class="message-header">
+              <span class="message-label">📱 最新短信</span>
+              <span class="message-time">{{ formatTime(latestMessage.timestamp) }}</span>
             </div>
-            <label class="switch">
-              <input 
-                type="checkbox" 
-                :checked="appStore.config.settings.auto_return"
-                :disabled="!appStore.config.settings.auto_paste"
-                @change="toggleAutoReturn"
-              >
-              <span class="switch-slider"></span>
-            </label>
+            <div class="message-content">{{ latestMessage.text }}</div>
+            <div class="message-sender">来自: {{ latestMessage.sender }}</div>
+            <div v-if="latestMessageVerificationCode" class="verification-code-display">
+              <span class="code-label">🔑 验证码:</span>
+              <span class="code-value">{{ latestMessageVerificationCode.code }}</span>
+              <span class="code-status">已复制到剪贴板</span>
+            </div>
           </div>
           
-          <div class="list-item">
-            <div class="list-item-content">
-              <div class="list-item-title">登录时启动</div>
-              <div class="list-item-description">系统启动时自动启动 MessAuto</div>
-            </div>
-            <label class="switch">
-              <input 
-                type="checkbox" 
-                :checked="appStore.config.settings.launch_at_login"
-                @change="toggleLaunchAtLogin"
-              >
-              <span class="switch-slider"></span>
-            </label>
+          <div v-else class="no-message">
+            <span class="no-message-text">等待新短信...</span>
           </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 验证码历史区域 -->
-    <div class="card">
-      <div class="card-header">
-        <h2 class="card-title">📋 验证码历史</h2>
-        <div class="header-actions">
-          <button class="btn btn-secondary btn-sm" @click="testPaste">
-            测试粘贴
-          </button>
-          <button class="btn btn-secondary btn-sm" @click="testEnter">
-            测试回车
-          </button>
-        </div>
-      </div>
-      <div class="card-content">
-        <div v-if="appStore.verificationCodes.length === 0" class="empty-state">
-          <div class="empty-icon">📭</div>
-          <div class="empty-text">暂无验证码记录</div>
-          <div class="empty-description">当检测到新的短信验证码时，会在这里显示</div>
-        </div>
-        
-        <div v-else class="verification-codes">
-          <div 
-            v-for="code in appStore.verificationCodes" 
-            :key="`${code.code}-${code.timestamp}`"
-            class="verification-code-item"
-          >
-            <div class="code-info">
-              <div class="code-value">{{ code.code }}</div>
-              <div class="code-meta">
-                <span class="code-time">{{ formatTime(code.timestamp) }}</span>
-                <span class="code-source">来源: {{ code.source }}</span>
-                <span class="code-confidence">可信度: {{ Math.round(code.confidence * 100) }}%</span>
-              </div>
-            </div>
-            <div class="code-actions">
-              <button class="btn btn-secondary btn-sm" @click="copyCode(code.code)">
-                复制
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 错误提示 -->
-    <div v-if="appStore.error" class="card card-error">
-      <div class="card-content">
-        <div class="error-content">
-          <div class="error-icon">❌</div>
-          <div class="error-text">{{ appStore.error }}</div>
-          <button class="btn btn-secondary btn-sm" @click="appStore.clearError()">
-            关闭
-          </button>
         </div>
       </div>
     </div>
@@ -144,10 +58,46 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useAppStore } from '../stores/app'
+import type { SMSMessage, VerificationCode } from '@shared/types'
 
 const appStore = useAppStore()
+
+// 最新短信和验证码状态
+const latestMessage = ref<SMSMessage | null>(null)
+const latestVerificationCode = ref<VerificationCode | null>(null)
+
+// 计算属性：检查最新短信是否包含验证码
+const latestMessageVerificationCode = computed(() => {
+  if (!latestMessage.value) return null
+  
+  // 使用与后端相同的验证码提取逻辑
+  const text = latestMessage.value.text
+  const patterns = [
+    /\b\d{4,8}\b/g,
+    /\b[A-Z0-9]{4,8}\b/g,
+    /(?:验证码|code|verification)[\s\u00a0]*[:：]?\s*([A-Z0-9]{4,8})/gi,
+    /(?:您的|your)\s*(?:验证码|code)\s*(?:是|is)[\s\u00a0]*[:：]?\s*([A-Z0-9]{4,8})/gi,
+  ]
+  
+  for (const pattern of patterns) {
+    const matches = text.match(pattern)
+    if (matches) {
+      // 返回最可能的验证码（通常是4-8位数字或字母数字组合）
+      const code = matches[0].replace(/[^A-Z0-9]/gi, '')
+      if (code.length >= 4 && code.length <= 8) {
+        return {
+          code,
+          confidence: 0.9,
+          timestamp: new Date(),
+          source: latestMessage.value.sender
+        }
+      }
+    }
+  }
+  return null
+})
 
 const allPermissionsGranted = computed(() => 
   appStore.permissions.fullDiskAccess && appStore.permissions.accessibility
@@ -157,44 +107,6 @@ const showDiskAccessGuide = () => {
   appStore.showPermissionGuide('disk-access')
 }
 
-const showAccessibilityGuide = () => {
-  appStore.showPermissionGuide('accessibility')
-}
-
-const toggleAutoPaste = async () => {
-  await appStore.updateSettings({
-    auto_paste: !appStore.config.settings.auto_paste,
-  })
-}
-
-const toggleAutoReturn = async () => {
-  await appStore.updateSettings({
-    auto_return: !appStore.config.settings.auto_return,
-  })
-}
-
-const toggleLaunchAtLogin = async () => {
-  await appStore.updateSettings({
-    launch_at_login: !appStore.config.settings.launch_at_login,
-  })
-}
-
-const testPaste = () => {
-  appStore.simulatePaste()
-}
-
-const testEnter = () => {
-  appStore.simulateEnter()
-}
-
-const copyCode = async (code: string) => {
-  try {
-    await navigator.clipboard.writeText(code)
-  } catch (error) {
-    console.error('复制失败:', error)
-  }
-}
-
 const formatTime = (timestamp: Date) => {
   return new Date(timestamp).toLocaleString('zh-CN', {
     month: '2-digit',
@@ -202,6 +114,21 @@ const formatTime = (timestamp: Date) => {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
+  })
+}
+
+// 监听事件
+if (typeof window !== 'undefined' && window.electronAPI) {
+  // 监听验证码提取事件
+  window.electronAPI.onVerificationCodeExtracted((code: VerificationCode) => {
+    latestVerificationCode.value = code
+    console.log('收到验证码:', code)
+  })
+  
+  // 监听最新短信事件
+  window.electronAPI.onLatestMessageReceived((message: SMSMessage) => {
+    latestMessage.value = message
+    console.log('收到最新短信:', message)
   })
 }
 </script>
@@ -237,89 +164,155 @@ const formatTime = (timestamp: Date) => {
   margin: 0;
 }
 
-.header-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.empty-state {
-  text-align: center;
-  padding: 40px 20px;
-}
-
-.empty-icon {
-  font-size: 48px;
-  margin-bottom: 16px;
-}
-
-.empty-text {
-  font-size: 18px;
-  font-weight: 600;
-  color: #1D1D1F;
-  margin-bottom: 8px;
-}
-
-.empty-description {
-  font-size: 14px;
-  color: #666;
-}
-
-.verification-codes {
+.monitor-status {
   display: flex;
   flex-direction: column;
+  gap: 16px;
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
   gap: 12px;
 }
 
-.verification-code-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.status-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #34C759;
+  animation: pulse 2s infinite;
+}
+
+.status-dot.active {
+  background: #34C759;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.1);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.status-text {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1D1D1F;
+}
+
+.monitor-description {
+  padding: 12px;
+  background: #F8F9FA;
+  border-radius: 6px;
+  border-left: 4px solid #34C759;
+}
+
+.monitor-description p {
+  margin: 0;
+  font-size: 14px;
+  color: #666;
+  line-height: 1.5;
+}
+
+.latest-message {
+  margin-top: 20px;
   padding: 16px;
   background: #F8F9FA;
   border-radius: 8px;
-  border: 1px solid #E9ECEF;
+  border-left: 4px solid #007AFF;
 }
 
-.code-info {
-  flex: 1;
-}
-
-.code-value {
-  font-size: 18px;
-  font-weight: 600;
-  font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
-  color: #007AFF;
-  margin-bottom: 4px;
-}
-
-.code-meta {
+.message-header {
   display: flex;
-  gap: 12px;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.message-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1D1D1F;
+}
+
+.message-time {
   font-size: 12px;
   color: #666;
 }
 
-.code-actions {
-  margin-left: 16px;
+.message-content {
+  font-size: 14px;
+  color: #1D1D1F;
+  line-height: 1.4;
+  margin-bottom: 8px;
+  padding: 8px;
+  background: white;
+  border-radius: 4px;
+  border: 1px solid #E5E5EA;
 }
 
-.card-error {
-  border-left: 4px solid #FF3B30;
+.message-sender {
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 12px;
 }
 
-.error-content {
+.verification-code-display {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #E7F5E7;
+  border-radius: 6px;
+  border: 1px solid #34C759;
 }
 
-.error-icon {
-  font-size: 20px;
+.code-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1D7324;
 }
 
-.error-text {
-  flex: 1;
-  color: #FF3B30;
-  font-weight: 500;
+.code-value {
+  font-size: 16px;
+  font-weight: 700;
+  font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+  color: #1D7324;
+  background: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #34C759;
+}
+
+.code-status {
+  font-size: 12px;
+  color: #1D7324;
+  background: #D1F2D1;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.no-message {
+  margin-top: 20px;
+  padding: 20px;
+  text-align: center;
+  background: #F8F9FA;
+  border-radius: 8px;
+  border: 2px dashed #E5E5EA;
+}
+
+.no-message-text {
+  font-size: 14px;
+  color: #666;
+  font-style: italic;
 }
 </style>

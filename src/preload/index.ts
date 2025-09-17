@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { AppConfig, AppSettings, PermissionStatus, VerificationCode } from '@shared/types'
+import type { AppConfig, AppSettings, PermissionStatus, VerificationCode, SMSMessage } from '@shared/types'
 import { IPC_CHANNELS } from '@shared/constants'
 
 // 定义暴露给渲染进程的 API
@@ -16,8 +16,8 @@ export interface ElectronAPI {
 
   // 验证码相关
   onVerificationCodeExtracted: (callback: (code: VerificationCode) => void) => () => void
-  simulatePaste: () => Promise<void>
-  simulateEnter: () => Promise<void>
+  onLatestMessageReceived: (callback: (message: SMSMessage) => void) => () => void
+  copyToClipboard: (text: string) => Promise<{ success: boolean; error?: string }>
 
   // 窗口管理
   showWindow: () => void
@@ -74,9 +74,16 @@ const electronAPI: ElectronAPI = {
     }
   },
 
-  simulatePaste: () => ipcRenderer.invoke(IPC_CHANNELS.SIMULATE_PASTE),
-  
-  simulateEnter: () => ipcRenderer.invoke(IPC_CHANNELS.SIMULATE_ENTER),
+  onLatestMessageReceived: (callback: (message: SMSMessage) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, message: SMSMessage) => callback(message)
+    ipcRenderer.on('latest-message-received', handler)
+    
+    return () => {
+      ipcRenderer.removeListener('latest-message-received', handler)
+    }
+  },
+
+  copyToClipboard: (text: string) => ipcRenderer.invoke(IPC_CHANNELS.COPY_TO_CLIPBOARD, text),
 
   // 窗口管理
   showWindow: () => ipcRenderer.send(IPC_CHANNELS.SHOW_WINDOW),

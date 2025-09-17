@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Tray, Menu, dialog, shell, nativeImage } from 'electron'
+import { app, BrowserWindow, Tray, Menu, dialog, shell, nativeImage, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { TrayManager } from './tray'
@@ -7,6 +7,9 @@ import { PermissionManager } from './permissions'
 import { SMSMonitor } from './monitor'
 import { AutomationService } from './automation'
 import { isMacOS } from '@shared/utils'
+import { extractVerificationCode } from '@shared/utils'
+import { IPC_CHANNELS } from '@shared/constants'
+import type { VerificationCode } from '@shared/types'
 
 class MainApplication {
   private mainWindow: BrowserWindow | null = null
@@ -16,6 +19,7 @@ class MainApplication {
   private smsMonitor: SMSMonitor | null = null
   private automationService: AutomationService | null = null
   private isQuitting = false
+  private latestVerificationCode: VerificationCode | null = null
 
   constructor() {
     this.initializeApp()
@@ -31,14 +35,8 @@ class MainApplication {
     }
 
     app.on('second-instance', () => {
-      // 当用户尝试启动第二个实例时，显示主窗口
-      if (this.mainWindow) {
-        if (this.mainWindow.isMinimized()) {
-          this.mainWindow.restore()
-        }
-        this.mainWindow.show()
-        this.mainWindow.focus()
-      }
+      // 当用户尝试启动第二个实例时，显示设置窗口（如果存在）
+      this.showSettings()
     })
 
     // 初始化各种事件监听器
@@ -51,11 +49,10 @@ class MainApplication {
   }
 
   private setupAppEventListeners(): void {
-    // macOS 特有：当应用被激活时
+    // macOS 特有：当应用被激活时（系统托盘应用不自动创建窗口）
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
-        this.createWindow()
-      }
+      // 系统托盘应用通常不在 activate 时自动显示窗口
+      // 用户可以通过托盘菜单显示设置窗口
     })
 
     // 当所有窗口关闭时
@@ -91,11 +88,12 @@ class MainApplication {
       // 创建托盘图标
       this.createTray()
 
-      // 根据配置决定是否显示主窗口
-      const config = this.configManager?.getConfig()
-      if (!config?.settings.hide_icon_forever) {
-        this.createWindow()
+      // 隐藏应用在Dock中的图标，让应用纯后台运行
+      if (app.dock) {
+        app.dock.hide()
       }
+
+      console.log('✅ 应用已在后台启动，仅在系统托盘中显示')
 
     } catch (error) {
       console.error('应用初始化失败:', error)
@@ -112,7 +110,7 @@ class MainApplication {
     this.permissionManager = new PermissionManager()
 
     // 初始化自动化服务
-    this.automationService = new AutomationService(this.configManager)
+    this.automationService = new AutomationService()
 
     // 初始化短信监控器
     this.smsMonitor = new SMSMonitor(
@@ -123,18 +121,37 @@ class MainApplication {
 
     // 设置服务间的事件监听
     this.setupServiceEventListeners()
+
+    // 设置 IPC 处理程序
+    this.setupIPCHandlers()
   }
 
   private setupServiceEventListeners(): void {
     if (!this.smsMonitor || !this.configManager) return
 
     // 监听验证码提取事件
-    this.smsMonitor.on('verification-code-extracted', (code) => {
+    this.smsMonitor.on('verification-code-extracted', (code, message) => {
       console.log('提取到验证码:', code)
+      
+      // 保存最新的验证码
+      this.latestVerificationCode = code
+      
+      // 发送到渲染进程，包含验证码和原始短信信息
+      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        this.mainWindow.webContents.send('verification-code-extracted', code)
+        if (message) {
+          this.mainWindow.webContents.send('latest-message-received', message)
+        }
+      }
+    })
+    
+    // 监听最新短信更新事件（即使不包含验证码）
+    this.smsMonitor.on('latest-message-updated', (message) => {
+      console.log('最新短信更新:', message.text.substring(0, 30) + '...')
       
       // 发送到渲染进程
       if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-        this.mainWindow.webContents.send('verification-code-extracted', code)
+        this.mainWindow.webContents.send('latest-message-received', message)
       }
     })
 
@@ -169,11 +186,34 @@ class MainApplication {
     
     if (!permissions.fullDiskAccess) {
       this.showPermissionDialog('disk-access')
-    } else if (!permissions.accessibility) {
-      this.showPermissionDialog('accessibility')
     } else {
-      // 权限都已获得，开始监控
+      // 权限已获得，开始监控
       this.smsMonitor?.startMonitoring()
+      
+      // 启动后发送最新短信到前端
+      this.sendLatestMessageToFrontend()
+    }
+  }
+  
+  private async sendLatestMessageToFrontend(): Promise<void> {
+    if (!this.smsMonitor) return
+    
+    try {
+      // 获取最新的短信（不管是否包含验证码）
+      const messages = await this.smsMonitor.getLatestMessages(1) // 获取最新的1条消息
+      if (messages.length > 0) {
+        const latestMessage = messages[0]
+        console.log('📩 启动时发送最新短信到前端:', latestMessage.text.substring(0, 30) + '...')
+        
+        if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+          this.mainWindow.webContents.send('latest-message-received', latestMessage)
+        }
+        
+        // 启动时不检查验证码，也不更新剪贴板，只显示最新短信
+        console.log('🚀 启动模式，不更新剪贴板，只显示最新短信');
+      }
+    } catch (error) {
+      console.error('获取最新短信失败:', error)
     }
   }
 
@@ -182,7 +222,7 @@ class MainApplication {
     this.mainWindow = new BrowserWindow({
       width: 800,
       height: 600,
-      show: false,
+      show: false, // 默认不显示窗口
       autoHideMenuBar: true,
       titleBarStyle: 'hiddenInset',
       webPreferences: {
@@ -193,11 +233,12 @@ class MainApplication {
       },
     })
 
-    this.mainWindow.on('ready-to-show', () => {
-      if (this.mainWindow) {
-        this.mainWindow.show()
-      }
-    })
+    // 不自动显示窗口，只在用户主动点击托盘菜单时显示
+    // this.mainWindow.on('ready-to-show', () => {
+    //   if (this.mainWindow) {
+    //     this.mainWindow.show()
+    //   }
+    // })
 
     this.mainWindow.webContents.setWindowOpenHandler((details) => {
       shell.openExternal(details.url)
@@ -213,18 +254,33 @@ class MainApplication {
 
     // 监听窗口关闭事件
     this.mainWindow.on('close', (event) => {
-      if (!app.isQuitting) {
+      if (!this.isQuitting) {
         event.preventDefault()
         this.mainWindow?.hide()
+        
+        // 隐藏窗口后再次隐藏Dock图标
+        if (app.dock) {
+          app.dock.hide()
+        }
       }
     })
+
+    console.log('⚙️ 主窗口已创建，但不显示（后台模式）')
   }
 
   private createTray(): void {
     if (!this.configManager) return
 
+    // 创建托盘管理器
+    // 在打包后，资源文件在Resources目录中
+    const iconPath = is.dev 
+      ? join(__dirname, '../../assets/icons/tray-icon.png')
+      : join(process.resourcesPath, 'assets/icons/tray-icon.png')
+    
+    console.log('托盘图标路径:', iconPath)
+    
     this.trayManager = new TrayManager(
-      trayIcon,
+      iconPath,
       this.configManager,
       this.onTrayMenuClick.bind(this)
     )
@@ -232,12 +288,6 @@ class MainApplication {
 
   private onTrayMenuClick(menuId: string): void {
     switch (menuId) {
-      case 'auto_paste':
-        this.toggleAutoPaste()
-        break
-      case 'auto_return':
-        this.toggleAutoReturn()
-        break
       case 'hide_icon_temp':
         this.hideIconTemporary()
         break
@@ -259,35 +309,6 @@ class MainApplication {
       default:
         console.log('未知的托盘菜单项:', menuId)
     }
-  }
-
-  private async toggleAutoPaste(): Promise<void> {
-    if (!this.configManager) return
-
-    const config = this.configManager.getConfig()
-    const newValue = !config.settings.auto_paste
-
-    await this.configManager.updateSettings({
-      auto_paste: newValue,
-      // 如果关闭自动粘贴，也关闭自动回车
-      auto_return: newValue ? config.settings.auto_return : false,
-    })
-  }
-
-  private async toggleAutoReturn(): Promise<void> {
-    if (!this.configManager) return
-
-    const config = this.configManager.getConfig()
-    
-    // 自动回车依赖于自动粘贴
-    if (!config.settings.auto_paste) {
-      this.showInfoDialog('提示', '自动回车功能需要先启用自动粘贴功能')
-      return
-    }
-
-    await this.configManager.updateSettings({
-      auto_return: !config.settings.auto_return,
-    })
   }
 
   private hideIconTemporary(): void {
@@ -332,11 +353,20 @@ class MainApplication {
   }
 
   private showSettings(): void {
+    if (!this.mainWindow) {
+      this.createWindow()
+    }
+    
     if (this.mainWindow) {
+      // 显示窗口时临时显示Dock图标
+      if (app.dock) {
+        app.dock.show()
+      }
+      
       this.mainWindow.show()
       this.mainWindow.focus()
-    } else {
-      this.createWindow()
+      
+      console.log('📝 设置窗口已显示')
     }
   }
 
@@ -351,7 +381,7 @@ class MainApplication {
   }
 
   private quit(): void {
-    app.isQuitting = true
+    this.isQuitting = true
     app.quit()
   }
 
@@ -401,6 +431,44 @@ class MainApplication {
     // 清理资源
     this.smsMonitor?.stopMonitoring()
     this.trayManager?.destroy()
+  }
+
+  private setupIPCHandlers(): void {
+    // 配置相关
+    ipcMain.handle(IPC_CHANNELS.GET_CONFIG, () => {
+      return this.configManager?.getConfig()
+    })
+
+    ipcMain.handle(IPC_CHANNELS.UPDATE_CONFIG, async (_, settings) => {
+      await this.configManager?.updateSettings(settings)
+    })
+
+    // 权限相关
+    ipcMain.handle(IPC_CHANNELS.CHECK_PERMISSIONS, async () => {
+      return await this.permissionManager?.checkAllPermissions()
+    })
+
+    ipcMain.on(IPC_CHANNELS.SHOW_PERMISSION_GUIDE, (_, type) => {
+      this.showPermissionDialog(type)
+    })
+
+    // 自动化操作
+    ipcMain.handle(IPC_CHANNELS.COPY_TO_CLIPBOARD, async (_, text: string) => {
+      return await this.automationService?.copyToClipboard(text)
+    })
+
+    // 窗口管理
+    ipcMain.on(IPC_CHANNELS.SHOW_WINDOW, () => {
+      this.showSettings()
+    })
+
+    ipcMain.on(IPC_CHANNELS.HIDE_WINDOW, () => {
+      this.mainWindow?.hide()
+    })
+
+    ipcMain.on(IPC_CHANNELS.CLOSE_WINDOW, () => {
+      this.mainWindow?.close()
+    })
   }
 }
 

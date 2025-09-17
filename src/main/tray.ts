@@ -1,7 +1,8 @@
 import { Tray, Menu, nativeImage } from 'electron'
-import { AppSettings, TrayMenuState } from '@shared/types'
+import { existsSync } from 'fs'
+import type { AppSettings, TrayMenuState } from '@shared/types'
 import { TRAY_MENU_IDS } from '@shared/constants'
-import { ConfigManager } from './config'
+import type { ConfigManager } from './config'
 
 export class TrayManager {
   private tray: Tray | null = null
@@ -17,13 +18,24 @@ export class TrayManager {
 
   private createTray(): void {
     try {
-      // 创建托盘图标
-      const icon = nativeImage.createFromPath(this.iconPath)
+      // 检查图标文件是否存在
+      if (!existsSync(this.iconPath)) {
+        console.warn('托盘图标文件不存在:', this.iconPath)
+        // 创建一个简单的默认图标
+        const icon = nativeImage.createEmpty()
+        icon.resize({ width: 16, height: 16 })
+        this.tray = new Tray(icon)
+      } else {
+        // 创建托盘图标
+        const icon = nativeImage.createFromPath(this.iconPath)
+        
+        // 确保图标大小适合托盘
+        icon.setTemplateImage(true)
+        
+        this.tray = new Tray(icon)
+        console.log('托盘图标加载成功:', this.iconPath)
+      }
       
-      // 确保图标大小适合托盘
-      icon.setTemplateImage(true)
-      
-      this.tray = new Tray(icon)
       this.tray.setToolTip('MessAuto - 短信验证码自动提取')
       
       // 构建菜单
@@ -38,6 +50,17 @@ export class TrayManager {
       console.log('系统托盘创建成功')
     } catch (error) {
       console.error('创建系统托盘失败:', error)
+      // 即使图标加载失败，也尝试创建一个基本的托盘
+      try {
+        const fallbackIcon = nativeImage.createEmpty()
+        fallbackIcon.resize({ width: 16, height: 16 })
+        this.tray = new Tray(fallbackIcon)
+        this.tray.setToolTip('MessAuto - 短信验证码自动提取')
+        this.updateMenu(this.configManager.getConfig().settings)
+        console.log('使用备用方案创建了系统托盘')
+      } catch (fallbackError) {
+        console.error('备用托盘创建也失败:', fallbackError)
+      }
     }
   }
 
@@ -58,20 +81,6 @@ export class TrayManager {
       {
         label: '📨 MessAuto',
         enabled: false,
-      },
-      { type: 'separator' },
-      {
-        id: TRAY_MENU_IDS.AUTO_PASTE,
-        label: `${settings.auto_paste ? '✅' : '❌'} 自动粘贴`,
-        type: 'normal',
-        click: () => this.onMenuClick(TRAY_MENU_IDS.AUTO_PASTE),
-      },
-      {
-        id: TRAY_MENU_IDS.AUTO_RETURN,
-        label: `${settings.auto_return ? '✅' : '❌'} 自动回车`,
-        type: 'normal',
-        enabled: settings.auto_paste, // 依赖于自动粘贴
-        click: () => this.onMenuClick(TRAY_MENU_IDS.AUTO_RETURN),
       },
       { type: 'separator' },
       {

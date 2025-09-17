@@ -1,6 +1,6 @@
 import { ref, reactive } from 'vue'
 import { defineStore } from 'pinia'
-import { AppConfig, AppSettings, PermissionStatus, VerificationCode } from '@shared/types'
+import type { AppConfig, AppSettings, PermissionStatus } from '@shared/types'
 import { DEFAULT_CONFIG } from '@shared/constants'
 
 export const useAppStore = defineStore('app', () => {
@@ -10,7 +10,6 @@ export const useAppStore = defineStore('app', () => {
     fullDiskAccess: false,
     accessibility: false,
   })
-  const verificationCodes = ref<VerificationCode[]>([])
   const isLoading = ref(false)
   const error = ref<string | null>(null)
 
@@ -77,23 +76,17 @@ export const useAppStore = defineStore('app', () => {
     window.electronAPI.showPermissionGuide(type)
   }
 
-  // 模拟粘贴
-  const simulatePaste = async () => {
+  // 复制到剪贴板
+  const copyToClipboard = async (text: string) => {
     try {
-      await window.electronAPI.simulatePaste()
+      const result = await window.electronAPI.copyToClipboard(text)
+      if (!result.success) {
+        throw new Error(result.error || '复制失败')
+      }
     } catch (err) {
-      error.value = '粘贴操作失败'
-      console.error('粘贴操作失败:', err)
-    }
-  }
-
-  // 模拟回车
-  const simulateEnter = async () => {
-    try {
-      await window.electronAPI.simulateEnter()
-    } catch (err) {
-      error.value = '回车操作失败'
-      console.error('回车操作失败:', err)
+      error.value = '复制失败'
+      console.error('复制失败:', err)
+      throw err
     }
   }
 
@@ -110,17 +103,6 @@ export const useAppStore = defineStore('app', () => {
       permissions.value = status
     })
     cleanupFunctions.push(unsubscribePermissions)
-
-    // 监听验证码提取
-    const unsubscribeVerificationCode = window.electronAPI.onVerificationCodeExtracted((code) => {
-      verificationCodes.value.unshift(code)
-      
-      // 限制历史记录数量
-      if (verificationCodes.value.length > 50) {
-        verificationCodes.value = verificationCodes.value.slice(0, 50)
-      }
-    })
-    cleanupFunctions.push(unsubscribeVerificationCode)
 
     // 监听托盘菜单点击
     const unsubscribeTrayMenu = window.electronAPI.onTrayMenuClicked((menuId) => {
@@ -152,7 +134,6 @@ export const useAppStore = defineStore('app', () => {
     // 状态
     config,
     permissions,
-    verificationCodes,
     isLoading,
     error,
 
@@ -162,8 +143,7 @@ export const useAppStore = defineStore('app', () => {
     updateSettings,
     checkPermissions,
     showPermissionGuide,
-    simulatePaste,
-    simulateEnter,
+    copyToClipboard,
     cleanup,
     clearError,
     getAppInfo,

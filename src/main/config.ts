@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events'
 import Store from 'electron-store'
-import { AppConfig, AppSettings } from '@shared/types'
+import type { AppConfig, AppSettings } from '@shared/types'
 import { DEFAULT_CONFIG } from '@shared/constants'
 import { safeJsonParse } from '@shared/utils'
 
@@ -20,13 +20,11 @@ export class ConfigManager extends EventEmitter {
         settings: {
           type: 'object',
           properties: {
-            auto_paste: { type: 'boolean' },
-            auto_return: { type: 'boolean' },
             hide_icon_forever: { type: 'boolean' },
             launch_at_login: { type: 'boolean' },
             language: { type: 'string', enum: ['auto', 'zh-CN', 'en'] },
           },
-          required: ['auto_paste', 'auto_return', 'hide_icon_forever', 'launch_at_login', 'language'],
+          required: ['hide_icon_forever', 'launch_at_login', 'language'],
         },
         monitoring: {
           type: 'object',
@@ -107,14 +105,6 @@ export class ConfigManager extends EventEmitter {
     }
 
     // 验证设置值的有效性
-    if (typeof this.config.settings.auto_paste !== 'boolean') {
-      this.config.settings.auto_paste = DEFAULT_CONFIG.settings.auto_paste
-    }
-
-    if (typeof this.config.settings.auto_return !== 'boolean') {
-      this.config.settings.auto_return = DEFAULT_CONFIG.settings.auto_return
-    }
-
     if (typeof this.config.settings.hide_icon_forever !== 'boolean') {
       this.config.settings.hide_icon_forever = DEFAULT_CONFIG.settings.hide_icon_forever
     }
@@ -139,10 +129,6 @@ export class ConfigManager extends EventEmitter {
       this.config.monitoring.message_lookback_minutes = DEFAULT_CONFIG.monitoring.message_lookback_minutes
     }
 
-    // 业务逻辑验证：自动回车依赖于自动粘贴
-    if (this.config.settings.auto_return && !this.config.settings.auto_paste) {
-      this.config.settings.auto_return = false
-    }
   }
 
   public getConfig(): AppConfig {
@@ -159,11 +145,6 @@ export class ConfigManager extends EventEmitter {
       const updatedSettings: AppSettings = {
         ...this.config.settings,
         ...newSettings,
-      }
-
-      // 业务逻辑验证
-      if (updatedSettings.auto_return && !updatedSettings.auto_paste) {
-        updatedSettings.auto_return = false
       }
 
       // 更新配置
