@@ -3,7 +3,7 @@
 > 专业的OTP一次性密码自动管理工具，基于 Electron 开发的 macOS 桌面应用程序，专注于自动提取短信验证码并快速复制到剪贴板。
 
 <p align="center">
-  <img src="assets/icons/icon.svg" alt="OTPMaster Logo" width="120" height="120">
+  <img src="assets/icons/icon.png" alt="OTPMaster Logo" width="120" height="120">
 </p>
 
 <p align="center">

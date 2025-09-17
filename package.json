@@ -59,7 +59,7 @@
           "arm64"
         ]
       },
-      "icon": "build/icons/icon.icns",
+      "icon": "assets/icons/icon.png",
       "entitlements": "build/entitlements.plist",
       "entitlementsInherit": "build/entitlements.plist",
       "hardenedRuntime": true,
