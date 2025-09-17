@@ -63,7 +63,12 @@
       "entitlements": "build/entitlements.plist",
       "entitlementsInherit": "build/entitlements.plist",
       "hardenedRuntime": true,
-      "gatekeeperAssess": false
+      "gatekeeperAssess": false,
+      "extendInfo": {
+        "LSUIElement": 1,
+        "LSBackgroundOnly": false,
+        "NSHumanReadableCopyright": "Copyright © 2025 OTPMaster Team"
+      }
     },
     "dmg": {
       "sign": false
@@ -78,7 +83,6 @@
     "sms",
     "verification",
     "automation",
-    "macos",
-    "vue"
+    "macos"
   ]
 }

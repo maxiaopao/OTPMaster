@@ -27,6 +27,10 @@ class MainApplication {
 
     console.log('✅ 获得应用锁')
 
+    // 设置应用命令行参数，确保后台启动
+    app.commandLine.appendSwitch('--no-sandbox')
+    app.commandLine.appendSwitch('--disable-dev-shm-usage')
+    
     // 设置应用事件监听
     this.setupAppEventListeners()
 
@@ -46,6 +50,16 @@ class MainApplication {
       this.cleanup()
     })
 
+    // 防止应用被激活到前台
+    app.on('activate', () => {
+      // macOS 下点击 dock 图标时不做任何操作，保持后台运行
+    })
+
+    // 防止应用获得焦点
+    app.on('browser-window-focus', () => {
+      // 阻止窗口获得焦点
+    })
+
     electronApp.setAppUserModelId('com.otpmaster.electron')
   }
 
@@ -53,11 +67,14 @@ class MainApplication {
     try {
       console.log('🚀 OTPMaster 正在启动...')
 
-      // 隐藏Dock图标，纯后台运行
+      // 立即隐藏Dock图标，确保纯后台运行
       if (app.dock) {
         app.dock.hide()
         console.log('📱 已隐藏Dock图标')
       }
+
+      // 设置应用为非激活状态
+      app.hide()
 
       // 初始化核心服务
       console.log('⚙️ 正在初始化服务...')
@@ -102,7 +119,7 @@ class MainApplication {
 
   private createTray(): void {
     try {
-      // 创建托盘图标
+      // 创建托盘图标 - 保持历史版本的蓝色圆角矩形背景与白色'M'字母设计
       const iconPath = is.dev
         ? join(__dirname, '../../assets/icons/tray-icon.png')
         : join(process.resourcesPath, 'assets/icons/tray-icon.png')
@@ -118,7 +135,7 @@ class MainApplication {
         console.log('✅ 托盘图标加载成功')
       }
 
-      // 设置托盘菜单
+      // 设置托盘菜单 - 仅保留'关于'和'退出'两个功能项
       const contextMenu = Menu.buildFromTemplate([
         {
           label: '关于 OTPMaster',
@@ -141,12 +158,22 @@ class MainApplication {
   }
 
   private showAbout(): void {
+    // 临时显示Dock图标以显示对话框
+    if (app.dock) {
+      app.dock.show()
+    }
+
     dialog.showMessageBox({
       type: 'info',
       title: '关于 OTPMaster',
       message: 'OTPMaster v1.0.0',
       detail: 'OTP一次性密码自动管理工具\n运行状态：正常监控中',
       buttons: ['确定']
+    }).then(() => {
+      // 对话框关闭后重新隐藏Dock图标
+      if (app.dock) {
+        app.dock.hide()
+      }
     })
   }
 
