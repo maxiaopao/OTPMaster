@@ -1,9 +1,9 @@
 {
-  "name": "messauto-electron",
+  "name": "otpmaster-electron",
   "version": "1.0.0",
-  "description": "MessAuto-Electron 是一个基于 Electron 的 macOS 桌面应用程序，用于自动提取短信验证码并实现自动粘贴和回车功能",
-  "main": "dist-electron/main/index.js",
-  "author": "MessAuto Team",
+  "description": "OTPMaster - 专业的OTP一次性验证码自动管理工具，基于 Electron 开发的 macOS 桌面应用程序，专注于自动提取短信验证码并快速复制到剪贴板",
+  "main": "out/main/index.js",
+  "author": "OTPMaster Team",
   "license": "MIT",
   "private": true,
   "engines": {
@@ -12,58 +12,44 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "preview": "electron-vite preview",
-    "build:unpack": "npm run build && electron-builder --dir",
-    "build:win": "npm run build && electron-builder --win",
     "build:mac": "npm run build && electron-builder --mac",
-    "build:linux": "npm run build && electron-builder --linux",
-    "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --fix",
-    "format": "prettier --write .",
-    "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
-    "typecheck:web": "vue-tsc --noEmit -p tsconfig.web.json --composite false",
-    "typecheck": "npm run typecheck:node && npm run typecheck:web"
+    "start": "electron out/main/index.js"
   },
   "dependencies": {
-    "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
-    "auto-launch": "^5.0.5",
-    "chokidar": "^3.5.3",
-    "electron": "^28.0.0",
-    "electron-store": "^8.1.0",
-    "pinia": "^2.1.7",
-    "vue": "^3.4.0",
-    "vue-i18n": "^9.8.0"
+    "sqlite3": "^5.1.7"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.8",
+    "@electron/rebuild": "^3.7.2",
     "@types/node": "^20.10.0",
-    "@typescript-eslint/eslint-plugin": "^6.15.0",
-    "@typescript-eslint/parser": "^6.15.0",
-    "@vitejs/plugin-vue": "^4.5.2",
-    "@vue/eslint-config-prettier": "^8.0.0",
-    "@vue/eslint-config-typescript": "^12.0.0",
-    "@vue/test-utils": "^2.4.3",
-    "@vue/tsconfig": "^0.5.1",
+    "electron": "^28.0.0",
     "electron-builder": "^24.9.1",
     "electron-vite": "^2.0.0",
-    "eslint": "^8.56.0",
-    "eslint-plugin-vue": "^9.19.2",
-    "prettier": "^3.1.1",
     "typescript": "^5.3.0",
-    "vite": "^5.0.10",
-    "vitest": "^1.1.0",
-    "vue-tsc": "^1.8.25"
+    "vite": "^5.0.10"
   },
   "build": {
-    "appId": "com.messauto.electron",
-    "productName": "MessAuto",
+    "appId": "com.otpmaster.electron",
+    "productName": "OTPMaster",
     "directories": {
       "output": "dist"
     },
     "files": [
-      "dist-electron",
-      "dist"
+      "out",
+      "node_modules/sqlite3/**/*"
     ],
+    "extraResources": [
+      {
+        "from": "assets",
+        "to": "assets"
+      }
+    ],
+    "asarUnpack": [
+      "node_modules/sqlite3/**/*"
+    ],
+    "buildDependenciesFromSource": false,
+    "nodeGypRebuild": false,
+    "npmRebuild": false,
     "mac": {
       "category": "public.app-category.utilities",
       "target": {
@@ -73,11 +59,16 @@
           "arm64"
         ]
       },
-      "icon": "build/icons/icon.icns",
+      "icon": "assets/icons/icon.png",
       "entitlements": "build/entitlements.plist",
       "entitlementsInherit": "build/entitlements.plist",
       "hardenedRuntime": true,
-      "gatekeeperAssess": false
+      "gatekeeperAssess": false,
+      "extendInfo": {
+        "LSUIElement": 1,
+        "LSBackgroundOnly": false,
+        "NSHumanReadableCopyright": "Copyright © 2025 OTPMaster Team"
+      }
     },
     "dmg": {
       "sign": false
@@ -92,7 +83,6 @@
     "sms",
     "verification",
     "automation",
-    "macos",
-    "vue"
+    "macos"
   ]
 }
