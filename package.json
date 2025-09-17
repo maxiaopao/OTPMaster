@@ -1,7 +1,7 @@
 {
   "name": "otpmaster-electron",
   "version": "1.0.0",
-  "description": "OTPMaster-Electron 是一个基于 Electron 的 macOS 桌面应用程序，用于自动提取短信和邮箱验证码并实现自动粘贴和回车功能",
+  "description": "OTPMaster - 专业的OTP一次性验证码自动管理工具，基于 Electron 开发的 macOS 桌面应用程序，专注于自动提取短信验证码并快速复制到剪贴板",
   "main": "out/main/index.js",
   "author": "OTPMaster Team",
   "license": "MIT",
