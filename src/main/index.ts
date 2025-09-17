@@ -15,10 +15,10 @@ class MainApplication {
 
   private async initializeApp(): Promise<void> {
     console.log('🚀 正在初始化应用...')
-    
+
     // 确保只有一个应用实例运行
     const gotTheLock = app.requestSingleInstanceLock()
-    
+
     if (!gotTheLock) {
       console.log('⚠️ 应用已在运行，退出当前实例')
       app.quit()
@@ -26,7 +26,7 @@ class MainApplication {
     }
 
     console.log('✅ 获得应用锁')
-    
+
     // 设置应用事件监听
     this.setupAppEventListeners()
 
@@ -46,13 +46,13 @@ class MainApplication {
       this.cleanup()
     })
 
-    electronApp.setAppUserModelId('com.messauto.electron')
+    electronApp.setAppUserModelId('com.otpmaster.electron')
   }
 
   private async onAppReady(): Promise<void> {
     try {
-      console.log('🚀 MessAuto 正在启动...')
-      
+      console.log('🚀 OTPMaster 正在启动...')
+
       // 隐藏Dock图标，纯后台运行
       if (app.dock) {
         app.dock.hide()
@@ -67,7 +67,7 @@ class MainApplication {
       console.log('🎛️ 正在创建系统托盘...')
       this.createTray()
 
-      console.log('✅ MessAuto 已启动')
+      console.log('✅ OTPMaster 已启动')
       console.log('🔧 调试模式：可通过终端查看日志')
       console.log('📱 右键点击系统托盘图标查看菜单')
     } catch (error) {
@@ -103,12 +103,12 @@ class MainApplication {
   private createTray(): void {
     try {
       // 创建托盘图标
-      const iconPath = is.dev 
+      const iconPath = is.dev
         ? join(__dirname, '../../assets/icons/tray-icon.png')
         : join(process.resourcesPath, 'assets/icons/tray-icon.png')
-      
+
       console.log('🖼️ 正在加载托盘图标:', iconPath)
-      
+
       const image = nativeImage.createFromPath(iconPath)
       if (image.isEmpty()) {
         console.warn('⚠️ 托盘图标加载失败，使用默认图标')
@@ -117,11 +117,11 @@ class MainApplication {
         this.tray = new Tray(image.resize({ width: 16, height: 16 }))
         console.log('✅ 托盘图标加载成功')
       }
-      
+
       // 设置托盘菜单
       const contextMenu = Menu.buildFromTemplate([
         {
-          label: '关于 MessAuto',
+          label: '关于 OTPMaster',
           click: () => this.showAbout()
         },
         { type: 'separator' },
@@ -130,9 +130,9 @@ class MainApplication {
           click: () => this.quit()
         }
       ])
-      
+
       this.tray.setContextMenu(contextMenu)
-      this.tray.setToolTip('MessAuto - 短信验证码自动提取')
+      this.tray.setToolTip('OTPMaster - OTP一次性密码自动管理')
       console.log('✅ 系统托盘创建成功')
     } catch (error) {
       console.error('❌ 创建系统托盘失败:', error)
@@ -143,9 +143,9 @@ class MainApplication {
   private showAbout(): void {
     dialog.showMessageBox({
       type: 'info',
-      title: '关于 MessAuto',
-      message: 'MessAuto v1.0.0',
-      detail: '短信验证码自动提取工具\n运行状态：正常监控中',
+      title: '关于 OTPMaster',
+      message: 'OTPMaster v1.0.0',
+      detail: 'OTP一次性密码自动管理工具\n运行状态：正常监控中',
       buttons: ['确定']
     })
   }

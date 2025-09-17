@@ -1,9 +1,9 @@
 {
-  "name": "messauto-electron",
+  "name": "otpmaster-electron",
   "version": "1.0.0",
-  "description": "MessAuto-Electron 是一个基于 Electron 的 macOS 桌面应用程序，用于自动提取短信验证码并实现自动粘贴和回车功能",
+  "description": "OTPMaster-Electron 是一个基于 Electron 的 macOS 桌面应用程序，用于自动提取短信和邮箱验证码并实现自动粘贴和回车功能",
   "main": "out/main/index.js",
-  "author": "MessAuto Team",
+  "author": "OTPMaster Team",
   "license": "MIT",
   "private": true,
   "engines": {
@@ -29,8 +29,8 @@
     "vite": "^5.0.10"
   },
   "build": {
-    "appId": "com.messauto.electron",
-    "productName": "MessAuto",
+    "appId": "com.otpmaster.electron",
+    "productName": "OTPMaster",
     "directories": {
       "output": "dist"
     },

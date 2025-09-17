@@ -26,14 +26,14 @@ export class SMSMonitor extends EventEmitter {
     }
 
     try {
-      // 设置初始时间为当前时间，只监控从现在开始的新短信
-      this.lastCheckTime = new Date()
+      // 设置初始时间为30分钟前，这样可以捕获最近的短信但避免处理太老的历史消息
+      this.lastCheckTime = new Date(Date.now() - 30 * 60 * 1000) // 30分钟前
       
       await this.initializeMonitoring()
       this.isMonitoring = true
       console.log('✅ 短信监控已启动')
-      console.log('⚙️ 只监控新短信，不处理历史消息')
-      console.log('📈 监控间隔：5秒')
+      console.log('⚙️ 监控最近30分钟内的新短信')
+      console.log('📈 监控间隔：1秒 (高速响应模式)')
     } catch (error) {
       console.error('❌ 启动监控失败:', error)
     }
@@ -93,7 +93,7 @@ export class SMSMonitor extends EventEmitter {
   private setupPeriodicCheck(): void {
     this.checkInterval = setInterval(() => {
       this.checkForNewMessages()
-    }, 5000) // 每5秒检查一次
+    }, 1000) // 每1秒检查一次，提高响应速度
   }
 
   private async checkForNewMessages(): Promise<void> {
@@ -102,14 +102,21 @@ export class SMSMonitor extends EventEmitter {
     }
 
     try {
+      const startTime = Date.now()
       const now = new Date()
-      const lookbackTime = new Date(this.lastCheckTime.getTime() - 30000) // 往前30秒
+      // 查询最近2分钟的消息，减少查询范围提高速度
+      const lookbackTime = new Date(now.getTime() - 2 * 60 * 1000)
       const messages = await this.queryRecentMessagesAsync(lookbackTime)
       
       // 只处理真正的新消息（时间戳大于lastCheckTime）
       const newMessages = messages.filter(message => message.timestamp > this.lastCheckTime)
       
+      if (newMessages.length > 0) {
+        console.log(`🔍 发现 ${newMessages.length} 条新消息`)
+      }
+      
       for (const message of newMessages) {
+        const codeStartTime = Date.now()
         const verificationCode = extractVerificationCode(message.text, message.sender)
         
         if (verificationCode) {
@@ -119,8 +126,14 @@ export class SMSMonitor extends EventEmitter {
             this.processedMessages.add(messageKey)
             
             try {
-              await this.automationService.executeAutoSequence(verificationCode.code)
+              // 立即复制，不等待
+              this.automationService.copyToClipboard(verificationCode.code)
+              const processingTime = Date.now() - codeStartTime
+              
               console.log('✅ 验证码已复制:', verificationCode.code)
+              console.log('📱 消息来源:', message.sender)
+              console.log('⏰ 消息时间:', message.timestamp.toLocaleString())
+              console.log(`⚡ 处理耗时: ${processingTime}ms`)
             } catch (error) {
               console.error('复制失败:', error)
             }
@@ -128,10 +141,14 @@ export class SMSMonitor extends EventEmitter {
         }
       }
 
-      // 更新lastCheckTime以确保下次只处理新消息
-      this.lastCheckTime = now
+      // 只有处理了新消息后才更新lastCheckTime
+      if (newMessages.length > 0) {
+        this.lastCheckTime = now
+        const totalTime = Date.now() - startTime
+        console.log(`🔄 更新检查时间: ${now.toLocaleString()} (总耗时: ${totalTime}ms)`)
+      }
     } catch (error) {
-      // 静默处理错误
+      console.error('检查消息失败:', error)
     }
   }
 
@@ -153,7 +170,7 @@ export class SMSMonitor extends EventEmitter {
         AND m.text != ''
         AND m.date/1000000000 + strftime('%s', '2001-01-01') >= ?
       ORDER BY m.date DESC
-      LIMIT 50
+      LIMIT 10
     `
 
     const sinceUnixTimestamp = Math.floor(since.getTime() / 1000)
