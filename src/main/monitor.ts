@@ -21,6 +21,7 @@ export class SMSMonitor extends EventEmitter {
   private database: sqlite3.Database | null = null
   private mockMessages: SMSMessage[] = []
   private useRealDatabase = false
+  private processedMessages = new Set<string>() // 记录已处理的消息ID，避免重复复制
 
   constructor(
     private configManager: ConfigManager,
@@ -206,21 +207,30 @@ export class SMSMonitor extends EventEmitter {
         const verificationCode = extractVerificationCode(message.text, message.sender)
         
         if (verificationCode) {
+          // 创建消息的唯一标识
+          const messageKey = `${message.id}_${message.timestamp.getTime()}`
+          
+          // 检查是否已经处理过这条消息
+          if (this.processedMessages.has(messageKey)) {
+            console.log('⏭️ 消息已处理，跳过:', messageKey)
+            continue
+          }
+          
           console.log('🎉 发现新验证码:', verificationCode)
           
           // 触发验证码提取事件，同时传递原始短信信息
           this.emit('verification-code-extracted', verificationCode, message)
           
-          // 只有在正常监控模式下（不是首次启动）才执行自动化操作
-          if (timeSinceLastCheck <= 60 * 60 * 1000) {
-            console.log('🔄 正常监控模式，执行自动化操作（复制到剪贴板）');
-            try {
-              await this.automationService.executeAutoSequence(verificationCode.code)
-            } catch (error) {
-              console.error('自动化操作失败:', error)
-            }
-          } else {
-            console.log('🚀 首次启动模式，不执行自动化操作，仅发送事件');
+          // 标记消息为已处理
+          this.processedMessages.add(messageKey)
+          console.log('✅ 已标记消息为已处理:', messageKey)
+          
+          // 执行自动化操作（复制到剪贴板）
+          console.log('📋 执行自动化操作（复制到剪贴板）')
+          try {
+            await this.automationService.executeAutoSequence(verificationCode.code)
+          } catch (error) {
+            console.error('自动化操作失败:', error)
           }
         }
       }
@@ -231,19 +241,26 @@ export class SMSMonitor extends EventEmitter {
         console.log('📩 发送最新短信到前端:', latestMessage.text.substring(0, 30) + '...');
         this.emit('latest-message-updated', latestMessage);
         
-        // 检查最新短信是否包含验证码，但只在正常监控模式下更新剪贴板
+        // 检查最新短信是否包含验证码
         const latestVerificationCode = extractVerificationCode(latestMessage.text, latestMessage.sender)
-        if (latestVerificationCode && timeSinceLastCheck <= 60 * 60 * 1000) {
-          console.log('📩 正常监控模式，最新短信包含验证码，更新剪贴板:', latestVerificationCode.code);
-          try {
-            await this.automationService.executeAutoSequence(latestVerificationCode.code)
-          } catch (error) {
-            console.error('更新剪贴板失败:', error)
+        if (latestVerificationCode) {
+          // 创建消息的唯一标识
+          const messageKey = `${latestMessage.id}_${latestMessage.timestamp.getTime()}`
+          
+          // 只有未处理过的消息才复制
+          if (!this.processedMessages.has(messageKey)) {
+            console.log('📩 最新短信包含验证码，复制到剪贴板:', latestVerificationCode.code)
+            this.processedMessages.add(messageKey)
+            try {
+              await this.automationService.executeAutoSequence(latestVerificationCode.code)
+            } catch (error) {
+              console.error('更新剪贴板失败:', error)
+            }
+          } else {
+            console.log('📩 最新短信包含验证码，但已处理过，跳过复制:', latestVerificationCode.code)
           }
-        } else if (latestVerificationCode) {
-          console.log('📩 首次启动模式，最新短信包含验证码，但不更新剪贴板:', latestVerificationCode.code);
         } else {
-          console.log('📩 最新短信不包含验证码，不更新剪贴板');
+          console.log('📩 最新短信不包含验证码，不更新剪贴板')
         }
       }
 
@@ -529,5 +546,59 @@ private queryRecentMessages(since: Date): SMSMessage[] {
   // 公开方法：获取最新短信
   public async getLatestMessages(limit: number = 10): Promise<SMSMessage[]> {
     return await this.queryRecentMessagesAsync(new Date(0)) // 从1970年开始查询
+  }
+
+  // 测试方法：重置监控状态，让历史短信重新被处理
+  public async resetMonitorState(): Promise<void> {
+    this.lastCheckTime = new Date(0);
+    this.processedMessages.clear();
+    console.log('⚙️ 监控状态已重置，将重新处理所有消息');
+  }
+
+  // 测试方法：手动查找并复制验证码
+  public async testCopyVerificationCode(): Promise<void> {
+    console.log('🗺️ 正在查找并测试复制验证码...');
+    
+    const result = await this.findVerificationCodeFromRealDB();
+    if (result) {
+      console.log('✅ 找到验证码:', result.code.code);
+      
+      // 测试复制到剪贴板
+      try {
+        await this.automationService.executeAutoSequence(result.code.code);
+        console.log('✅ 测试复制成功！');
+      } catch (error) {
+        console.error('❌ 测试复制失败:', error);
+      }
+    } else {
+      console.log('❌ 未找到包含验证码的短信');
+    }
+  }
+  
+  // 测试方法：模拟新短信并触发复制（仅用于测试）
+  public async testVerificationCodeCopy(): Promise<void> {
+    const testMessage: SMSMessage = {
+      id: 'test_' + Date.now(),
+      text: '【测试】您的验证码是：123456，请在短时间内使用。',
+      sender: '+8613800138000',
+      timestamp: new Date(),
+      guid: 'test-guid-' + Date.now()
+    };
+    
+    console.log('🧪 正在测试验证码复制功能...');
+    
+    const verificationCode = extractVerificationCode(testMessage.text, testMessage.sender);
+    if (verificationCode) {
+      console.log('🎉 测试消息中发现验证码:', verificationCode);
+      
+      try {
+        await this.automationService.executeAutoSequence(verificationCode.code);
+        console.log('✅ 测试成功！验证码已复制到剪贴板:', verificationCode.code);
+      } catch (error) {
+        console.error('❌ 测试失败:', error);
+      }
+    } else {
+      console.log('❌ 测试消息中未找到验证码');
+    }
   }
 }

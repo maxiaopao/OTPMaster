@@ -209,8 +209,9 @@ class MainApplication {
           this.mainWindow.webContents.send('latest-message-received', latestMessage)
         }
         
-        // 启动时不检查验证码，也不更新剪贴板，只显示最新短信
-        console.log('🚀 启动模式，不更新剪贴板，只显示最新短信');
+        // 测试复制功能：尝试复制一次验证码
+        console.log('🧪 正在测试复制功能...')
+        await this.smsMonitor.testCopyVerificationCode()
       }
     } catch (error) {
       console.error('获取最新短信失败:', error)
@@ -455,6 +456,37 @@ class MainApplication {
     // 自动化操作
     ipcMain.handle(IPC_CHANNELS.COPY_TO_CLIPBOARD, async (_, text: string) => {
       return await this.automationService?.copyToClipboard(text)
+    })
+    
+    // 测试复制功能
+    ipcMain.handle(IPC_CHANNELS.TEST_COPY_FROM_SMS, async () => {
+      try {
+        if (this.smsMonitor) {
+          await this.smsMonitor.testCopyVerificationCode()
+          return { success: true }
+        } else {
+          return { success: false, error: '短信监控器未初始化' }
+        }
+      } catch (error) {
+        return { success: false, error: String(error) }
+      }
+    })
+
+    // 重置监控状态（清除已处理的消息记录）
+    ipcMain.handle('reset-monitor-state', async () => {
+      try {
+        if (this.smsMonitor) {
+          await this.smsMonitor.resetMonitorState()
+          // 重置后立即手动触发一次检查，这次会处理最新的验证码短信
+          console.log('🔄 重置完成，现在手动触发一次检查...')
+          await this.smsMonitor.testCopyVerificationCode()
+          return { success: true, message: '重置成功，并尝试复制最新验证码' }
+        } else {
+          return { success: false, error: '短信监控器未初始化' }
+        }
+      } catch (error) {
+        return { success: false, error: String(error) }
+      }
     })
 
     // 窗口管理

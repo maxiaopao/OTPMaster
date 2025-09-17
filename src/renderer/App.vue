@@ -3,8 +3,7 @@
     <HeaderComponent />
     
     <main class="main-content">
-      <router-view v-if="$route" />
-      <MainView v-else />
+      <MainView />
     </main>
     
     <FooterComponent />
