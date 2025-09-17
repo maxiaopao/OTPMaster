@@ -103,3 +103,4 @@ release/
 # Temporary files
 .tmp/
 temp/
+.qoder/*
