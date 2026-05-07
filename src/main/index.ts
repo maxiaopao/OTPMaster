@@ -30,7 +30,7 @@ class MainApplication {
     // 设置应用命令行参数，确保后台启动
     app.commandLine.appendSwitch('--no-sandbox')
     app.commandLine.appendSwitch('--disable-dev-shm-usage')
-    
+
     // 设置应用事件监听
     this.setupAppEventListeners()
 
@@ -121,8 +121,8 @@ class MainApplication {
     try {
       // 创建托盘图标 - 保持历史版本的蓝色圆角矩形背景与白色'M'字母设计
       const iconPath = is.dev
-        ? join(__dirname, '../../assets/icons/tray-icon.png')
-        : join(process.resourcesPath, 'assets/icons/tray-icon.png')
+        ? join(__dirname, '../../assets/icons/tray-icon-white.png')
+        : join(process.resourcesPath, 'assets/icons/tray-icon-white.png')
 
       console.log('🖼️ 正在加载托盘图标:', iconPath)
 
